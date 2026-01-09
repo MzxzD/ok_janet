@@ -44,7 +44,11 @@ git clone https://github.com/MzxzD/Janet-seed.git janet-seed
 # See INSTALL_JANET_SEED.md for DeepSeek configuration
 
 python scripts/setup_models.sh
-python server/run.py
+
+# Run the server (use one of these methods):
+./start_server.sh                    # Recommended: uses correct Python interpreter
+python3 server/run.py                 # Alternative: if python3 points to correct interpreter
+/opt/homebrew/bin/python3 server/run.py  # Explicit: use Homebrew Python
 ```
 
 ### 2. Setup Swift Server (Optional Relay)
@@ -65,7 +69,9 @@ swift run
 ### Server Options
 
 ```bash
-python server/run.py --help
+./start_server.sh --help
+# or
+python3 server/run.py --help
 ```
 
 Options:

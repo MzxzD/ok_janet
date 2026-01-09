@@ -18,6 +18,33 @@ from services.audio_pipeline import AudioPipeline
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Suppress noisy websockets handshake errors (common for health checks, failed connections)
+# These errors occur when connections are established but closed before handshake completes
+class SuppressHandshakeErrors(logging.Filter):
+    """Filter to suppress common WebSocket handshake errors"""
+    def filter(self, record):
+        msg = record.getMessage()
+        # Suppress errors about invalid HTTP requests and handshake failures
+        if any(phrase in msg for phrase in [
+            "did not receive a valid HTTP request",
+            "opening handshake failed",
+            "connection closed while reading HTTP request",
+            "stream ends after",
+            "EOFError: connection closed while reading HTTP request line"
+        ]):
+            return False  # Don't log this
+        return True  # Log everything else
+
+# Apply filter to all websockets loggers
+for logger_name in ["websockets", "websockets.server", "websockets.asyncio.server"]:
+    ws_logger = logging.getLogger(logger_name)
+    ws_logger.setLevel(logging.CRITICAL)  # Only show CRITICAL, suppress ERROR/WARNING/INFO
+    ws_logger.addFilter(SuppressHandshakeErrors())
+
+# Suppress noisy websockets handshake errors (common for health checks, failed connections)
+websockets_logger = logging.getLogger("websockets.server")
+websockets_logger.setLevel(logging.WARNING)  # Only show WARNING and above, not ERROR for handshake failures
+
 
 class JanetWebSocketServer:
     """WebSocket server for Janet mesh network"""
@@ -204,7 +231,51 @@ class JanetWebSocketServer:
     async def start(self):
         """Start the WebSocket server"""
         logger.info(f"Starting Janet WebSocket server on {self.host}:{self.port}")
-        async with websockets.serve(self.handle_client, self.host, self.port):
+        
+        # Custom process_request (can be used for request inspection if needed)
+        async def process_request(path, request_headers):
+            """Process incoming HTTP requests before handshake"""
+            # Return None to proceed with normal WebSocket handshake
+            return None
+        
+        
+        # Create a wrapper to ensure correct signature and handle errors gracefully
+        # Handle both old and new websockets API signatures
+        async def handler(websocket, path=None):
+            # Handle case where path might be passed as second arg or as attribute
+            if path is None:
+                # Try to get path from websocket if available
+                if hasattr(websocket, 'path'):
+                    path = websocket.path
+                else:
+                    path = "/"
+            
+            client_addr = None
+            try:
+                client_addr = websocket.remote_address
+                await self.handle_client(websocket, path)
+            except websockets.exceptions.InvalidMessage:
+                # Invalid handshake - common for health checks or wrong protocol
+                logger.debug(f"Invalid WebSocket handshake from {client_addr} (path: {path})")
+            except websockets.exceptions.ConnectionClosed:
+                # Normal connection close - don't log as error
+                logger.debug(f"Connection closed from {client_addr}")
+            except websockets.exceptions.InvalidState:
+                # Connection in invalid state - common during rapid connect/disconnect
+                logger.debug(f"Invalid connection state from {client_addr}")
+            except Exception as e:
+                # Other errors - log at debug level unless it's unexpected
+                if "EOFError" not in str(type(e).__name__):
+                    logger.debug(f"Connection error from {client_addr}: {e}")
+        
+        # Configure server with better error handling
+        # The websockets library logs handshake errors internally, so we suppress them
+        async with websockets.serve(
+            handler, 
+            self.host, 
+            self.port,
+            process_request=process_request
+        ) as server:
             logger.info("Server started, waiting for connections...")
             await asyncio.Future()  # Run forever
     

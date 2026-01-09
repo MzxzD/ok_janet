@@ -4,120 +4,85 @@ struct ContentView: View {
     @StateObject private var serviceDiscovery = ServiceDiscovery()
     @StateObject private var webSocketManager = WebSocketManager()
     @StateObject private var audioCapture = AudioCapture()
-    @State private var serverURL = "ws://localhost:8080/ws"
-    @State private var isConnected = false
-    @State private var inputText = ""
-    @State private var responseText = ""
+    @State private var serverURL = "ws://localhost:8765/ws"
+    @State private var showConnectionSettings = false
     
     var body: some View {
-        VStack(spacing: 20) {
-            Text("Janet Mesh Client")
-                .font(.largeTitle)
-                .padding()
-            
-            // Connection status
-            HStack {
-                Circle()
-                    .fill(isConnected ? Color.green : Color.red)
-                    .frame(width: 12, height: 12)
-                Text(isConnected ? "Connected" : "Disconnected")
-            }
-            
-            // Server URL input
-            TextField("Server URL", text: $serverURL)
-                .textFieldStyle(RoundedBorderTextFieldStyle())
-                .padding(.horizontal)
-            
-            // Connect button
-            Button(action: {
-                if isConnected {
-                    webSocketManager.disconnect()
-                    isConnected = false
-                } else {
-                    webSocketManager.connect(to: serverURL)
-                    isConnected = true
-                }
-            }) {
-                Text(isConnected ? "Disconnect" : "Connect")
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(isConnected ? Color.red : Color.blue)
-                    .foregroundColor(.white)
-                    .cornerRadius(8)
-            }
-            .padding(.horizontal)
-            
-            // Text input
-            VStack(alignment: .leading) {
-                Text("Text Input")
-                    .font(.headline)
-                TextField("Type your message...", text: $inputText)
-                    .textFieldStyle(RoundedBorderTextFieldStyle())
-                
-                Button("Send") {
-                    webSocketManager.sendText(inputText)
-                    inputText = ""
-                }
-                .frame(maxWidth: .infinity)
-                .padding()
-                .background(Color.green)
-                .foregroundColor(.white)
-                .cornerRadius(8)
-            }
-            .padding(.horizontal)
-            
-            // Audio recording
-            VStack {
-                Text("Audio Input")
-                    .font(.headline)
-                
-                HStack {
-                    Button(action: {
-                        if audioCapture.isRecording {
-                            audioCapture.stopRecording()
-                        } else {
-                            try? audioCapture.startRecording()
+        NavigationView {
+            ChatView(webSocketManager: webSocketManager)
+                .navigationTitle("Janet")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .navigationBarLeading) {
+                        HStack(spacing: 6) {
+                            Circle()
+                                .fill(webSocketManager.isConnected ? Color.green : Color.red)
+                                .frame(width: 8, height: 8)
+                            Text(webSocketManager.isConnected ? "Connected" : "Disconnected")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
                         }
-                    }) {
-                        Image(systemName: audioCapture.isRecording ? "stop.circle.fill" : "mic.circle.fill")
-                            .font(.system(size: 50))
-                            .foregroundColor(audioCapture.isRecording ? .red : .blue)
+                    }
+                    ToolbarItem(placement: .navigationBarTrailing) {
+                        Button(action: {
+                            showConnectionSettings = true
+                        }) {
+                            Image(systemName: "gear")
+                        }
+                    }
+                }
+                .sheet(isPresented: $showConnectionSettings) {
+                    ConnectionSettingsView(
+                        serverURL: $serverURL,
+                        webSocketManager: webSocketManager,
+                        isPresented: $showConnectionSettings
+                    )
+                }
+                .onAppear {
+                    print("📱 ContentView appeared")
+                    print("📱 ChatView should be visible")
+                    
+                    // Start service discovery
+                    if #available(iOS 14.0, *) {
+                        serviceDiscovery.startDiscovery()
                     }
                     
-                    if audioCapture.isRecording {
-                        ProgressView(value: audioCapture.audioLevel)
-                            .frame(width: 100)
+                    // Auto-connect on appear if not connected
+                    if !webSocketManager.isConnected {
+                        // Try to use discovered service first, otherwise use default URL
+                        if #available(iOS 14.0, *), let firstService = serviceDiscovery.discoveredServices.first,
+                           let serviceURL = serviceDiscovery.getServiceURL(from: firstService) {
+                            print("📱 Found service, connecting to: \(serviceURL)")
+                            serverURL = serviceURL
+                            webSocketManager.connect(to: serviceURL)
+                        } else {
+                            print("📱 No service discovered, attempting to connect to: \(serverURL)")
+                            // If localhost, warn user
+                            if serverURL.contains("localhost") {
+                                print("⚠️ WARNING: localhost won't work on physical device. Use Settings to enter server IP (e.g., ws://192.168.0.52:8765)")
+                            }
+                            webSocketManager.connect(to: serverURL)
+                        }
                     }
                 }
-            }
-            .padding()
-            
-            // Response
-            VStack(alignment: .leading) {
-                Text("Response")
-                    .font(.headline)
-                ScrollView {
-                    Text(responseText.isEmpty ? "No response yet" : responseText)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding()
+                .onChange(of: serviceDiscovery.discoveredServices) { services in
+                    // Auto-connect when service is discovered
+                    if !webSocketManager.isConnected, let firstService = services.first,
+                       #available(iOS 14.0, *) {
+                        print("📱 Service discovered, resolving...")
+                        serviceDiscovery.getServiceURL(from: firstService) { serviceURL in
+                            if let url = serviceURL {
+                                print("📱 Service resolved, connecting to: \(url)")
+                                DispatchQueue.main.async {
+                                    serverURL = url
+                                    webSocketManager.connect(to: url)
+                                }
+                            } else {
+                                print("⚠️ Could not resolve service URL")
+                            }
+                        }
+                    }
                 }
-                .frame(height: 200)
-                .background(Color.gray.opacity(0.1))
-                .cornerRadius(8)
-            }
-            .padding(.horizontal)
-            
-            Spacer()
-        }
-        .onChange(of: webSocketManager.lastMessage) { message in
-            // Parse response
-            if let data = message.data(using: .utf8),
-               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-               let type = json["type"] as? String,
-               type == "response",
-               let text = json["text"] as? String {
-                responseText = text
-            }
         }
     }
 }

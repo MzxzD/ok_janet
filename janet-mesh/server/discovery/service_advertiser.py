@@ -95,6 +95,8 @@ class ServiceAdvertiser:
                 addresses=[socket.inet_aton(local_ip)],
                 port=self.port,
                 properties={
+                    "ip": local_ip,  # Add IP address directly to properties
+                    "port": str(self.port),  # Add port for convenience
                     "capabilities": json.dumps(capabilities["capabilities"]),
                     "ram_gb": str(capabilities["ram_gb"]),
                     "cpu_cores": str(capabilities["cpu_cores"]),

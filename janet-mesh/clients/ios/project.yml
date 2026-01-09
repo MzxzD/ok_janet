@@ -1,0 +1,44 @@
+name: JanetMeshClient
+options:
+  bundleIdPrefix: com.janetmesh
+  deploymentTarget:
+    iOS: "16.0"
+  developmentLanguage: en
+  xcodeVersion: "15.0"
+
+packages: {}
+
+targets:
+  JanetMeshClient:
+    type: application
+    platform: iOS
+    deploymentTarget: "16.0"
+    sources:
+      - path: .
+        excludes:
+          - "*.md"
+          - "*.sh"
+          - "*.yml"
+          - "JanetMeshClient/"
+    info:
+      path: Info.plist
+      properties:
+        CFBundleDisplayName: "Janet Mesh"
+        CFBundleShortVersionString: "1.0"
+        CFBundleVersion: "1"
+        UILaunchScreen: {}
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: true
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+          NSAllowsArbitraryLoads: true
+        NSMicrophoneUsageDescription: "Janet needs microphone access for voice input"
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.janetmesh.client
+        SWIFT_VERSION: "5.0"
+        TARGETED_DEVICE_FAMILY: "1,2" # iPhone and iPad
+        SWIFT_OBJC_BRIDGING_HEADER: ""
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: ""
+    dependencies: []

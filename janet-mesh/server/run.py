@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """
 Standalone runner for the server (avoids relative import issues)
 """
