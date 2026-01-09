@@ -1,0 +1,35 @@
+FROM python:3.11-slim
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    ffmpeg \
+    portaudio19-dev \
+    build-essential \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set working directory
+WORKDIR /app
+
+# Copy requirements
+COPY server/requirements.txt /app/requirements.txt
+
+# Install Python dependencies
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy server code
+COPY server/ /app/server/
+
+# Create directories for models and memory
+RUN mkdir -p /app/models /app/memory_vaults
+
+# Set environment variables
+ENV PYTHONPATH=/app
+ENV MODELS_DIR=/app/models
+ENV MEMORY_DIR=/app/memory_vaults
+
+# Expose WebSocket port
+EXPOSE 8765
+
+# Run the server
+CMD ["python", "-m", "server.main", "--host", "0.0.0.0", "--port", "8765"]

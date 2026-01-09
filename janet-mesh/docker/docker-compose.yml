@@ -1,0 +1,49 @@
+version: '3.8'
+
+services:
+  brain:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.brain
+    container_name: janet-brain
+    ports:
+      - "8765:8765"
+    volumes:
+      - ../models:/app/models
+      - ../memory_vaults:/app/memory_vaults
+    environment:
+      - MODELS_DIR=/app/models
+      - MEMORY_DIR=/app/memory_vaults
+    networks:
+      - janet-mesh
+    restart: unless-stopped
+
+  stt-node:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.stt-node
+    container_name: janet-stt-node
+    ports:
+      - "8766:8766"
+    volumes:
+      - ../models:/app/models
+    networks:
+      - janet-mesh
+    restart: unless-stopped
+
+  tts-node:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.tts-node
+    container_name: janet-tts-node
+    ports:
+      - "8767:8767"
+    volumes:
+      - ../models:/app/models
+    networks:
+      - janet-mesh
+    restart: unless-stopped
+
+networks:
+  janet-mesh:
+    driver: bridge

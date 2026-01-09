@@ -1,0 +1,26 @@
+# Core dependencies
+websockets>=12.0
+# Note: asyncio is part of Python standard library (3.7+), no need to install
+
+# Model dependencies
+openai-whisper>=20231117
+piper-tts>=1.0.0
+# TTS>=0.20.0  # Coqui TTS - Optional, only supports Python <3.12. Use piper-tts for Python 3.12+
+
+# LLM dependencies
+ollama>=0.1.0
+llama-cpp-python>=0.2.0
+
+# Service discovery
+zeroconf>=0.131.0
+
+# Utilities
+numpy>=1.24.0
+psutil>=5.9.0
+
+# Janet-seed integration
+# Install with: git clone https://github.com/MzxzD/Janet-seed.git janet-seed
+# Or add to PYTHONPATH: export PYTHONPATH="${PYTHONPATH}:$(pwd)/janet-seed"
+# Or install as package: pip install -e janet-seed/
+# LiteLLM (used by Janet-seed for DeepSeek support)
+litellm>=1.0.0

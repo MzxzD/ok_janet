@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.venv
+*.egg-info/
+dist/
+build/
+
+# Models
+models/
+*.bin
+*.gguf
+*.safetensors
+
+# Memory vaults
+memory_vaults/
+*.db
+
+# Swift
+.swiftpm/
+.build/
+*.xcodeproj/
+*.xcworkspace/
+DerivedData/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log

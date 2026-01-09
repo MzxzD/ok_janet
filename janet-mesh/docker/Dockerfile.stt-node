@@ -1,0 +1,22 @@
+FROM python:3.11-slim
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    ffmpeg \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set working directory
+WORKDIR /app
+
+# Install Whisper
+RUN pip install --no-cache-dir openai-whisper
+
+# Create STT service script
+COPY docker/stt_service.py /app/stt_service.py
+
+# Expose service port
+EXPOSE 8766
+
+# Run STT service
+CMD ["python", "/app/stt_service.py"]

@@ -1,0 +1,22 @@
+FROM python:3.11-slim
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    espeak \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set working directory
+WORKDIR /app
+
+# Install TTS
+RUN pip install --no-cache-dir piper-tts
+
+# Create TTS service script
+COPY docker/tts_service.py /app/tts_service.py
+
+# Expose service port
+EXPOSE 8767
+
+# Run TTS service
+CMD ["python", "/app/tts_service.py"]
