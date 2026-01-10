@@ -4,6 +4,7 @@ struct ChatView: View {
     @ObservedObject var webSocketManager: WebSocketManager
     @State private var inputText: String = ""
     @FocusState private var isInputFocused: Bool
+    @State private var showFilePicker = false
     
     var body: some View {
         VStack(spacing: 0) {
@@ -72,6 +73,23 @@ struct ChatView: View {
             
             // Input area
             HStack(spacing: 12) {
+                // Attachment button (file upload)
+                Button(action: {
+                    showFilePicker = true
+                }) {
+                    Image(systemName: "paperclip")
+                        .font(.system(size: 22))
+                        .foregroundColor(.blue)
+                }
+                .disabled(!webSocketManager.isConnected)
+                .sheet(isPresented: $showFilePicker) {
+                    CombinedFilePickerView(
+                        onFileSelected: { url, data, fileName, fileType in
+                            handleFileUpload(url: url, data: data, fileName: fileName, fileType: fileType)
+                        }
+                    )
+                }
+                
                 if #available(iOS 16.0, *) {
                     TextField("Type a message...", text: $inputText, axis: .vertical)
                         .textFieldStyle(.plain)
@@ -131,6 +149,10 @@ struct ChatView: View {
         webSocketManager.sendText(text)
         inputText = ""
         isInputFocused = false
+    }
+    
+    private func handleFileUpload(url: URL, data: Data, fileName: String, fileType: String) {
+        webSocketManager.uploadFile(fileName: fileName, fileData: data, fileType: fileType, task: "analyze", remember: false)
     }
 }
 
