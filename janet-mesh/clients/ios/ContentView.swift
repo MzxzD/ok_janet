@@ -26,6 +26,15 @@ struct ContentView: View {
                         }
                     }
                     ToolbarItemGroup(placement: .navigationBarTrailing) {
+                        // VoIP Call button
+                        Button(action: {
+                            VoIPCallManager.shared.startCall(to: "Janet")
+                        }) {
+                            Image(systemName: "phone.fill")
+                                .foregroundColor(.green)
+                        }
+                        .disabled(!webSocketManager.isConnected || VoIPCallManager.shared.isInCall)
+                        
                         // Export button
                         if !webSocketManager.messages.isEmpty {
                             Button(action: {
@@ -58,6 +67,9 @@ struct ContentView: View {
                 .onAppear {
                     print("📱 ContentView appeared")
                     print("📱 ChatView should be visible")
+                    
+                    // Initialize VoIP manager with WebSocket manager
+                    VoIPCallManager.shared.setWebSocketManager(webSocketManager)
                     
                     // Start service discovery
                     if #available(iOS 14.0, *) {

@@ -195,3 +195,52 @@ class MemoryManager:
         
         conn.close()
         return count
+    
+    def export_context(self, client_id: str, limit: int = 100) -> Dict[str, Any]:
+        """
+        Export conversation context for soul transfer.
+        
+        Args:
+            client_id: Client identifier
+            limit: Maximum number of messages to export
+            
+        Returns:
+            Dictionary containing exported context
+        """
+        context = self.get_client_memory_context(client_id, limit=limit)
+        return {
+            "client_id": client_id,
+            "messages": context,
+            "exported_at": datetime.utcnow().isoformat()
+        }
+    
+    def import_context(self, exported_context: Dict[str, Any]) -> int:
+        """
+        Import conversation context from soul transfer.
+        
+        Args:
+            exported_context: Exported context dictionary
+            
+        Returns:
+            Number of messages imported
+        """
+        client_id = exported_context.get("client_id")
+        messages = exported_context.get("messages", [])
+        
+        if not client_id:
+            return 0
+        
+        imported_count = 0
+        for msg in messages:
+            role = msg.get("role")
+            content = msg.get("content")
+            if role and content:
+                self.add_to_memory(
+                    client_id,
+                    role,
+                    content,
+                    metadata=msg.get("metadata", {})
+                )
+                imported_count += 1
+        
+        return imported_count

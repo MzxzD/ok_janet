@@ -7,6 +7,9 @@ from .memory_manager import MemoryManager
 import json
 from pathlib import Path
 import os
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class JanetAdapter:
@@ -15,11 +18,19 @@ class JanetAdapter:
     with shared LLM but isolated memory contexts.
     """
     
-    def __init__(self, llm_model: Any, memory_manager: MemoryManager,
-                 session_manager: SessionManager):
+    def __init__(
+        self,
+        llm_model: Any,
+        memory_manager: MemoryManager,
+        session_manager: SessionManager,
+        identity_manager=None,
+        cluster_mode: bool = False
+    ):
         self.llm_model = llm_model
         self.memory_manager = memory_manager
         self.session_manager = session_manager
+        self.identity_manager = identity_manager
+        self.cluster_mode = cluster_mode
         self._janet_personality = self._load_janet_personality()
         
         # #region agent log
@@ -216,12 +227,22 @@ class JanetAdapter:
                 prompt_parts.append("- Avoid emojis in voice mode")
         
         prompt_parts.append("")
+        prompt_parts.append("=== CHARACTER IDENTITIES & KONOSUBA CONTEXT ===")
+        prompt_parts.append("You operate within a playful Konosuba-inspired framework:")
+        prompt_parts.append("- **Aqua-Janet**: You can channel a 'useless goddess' persona when appropriate - knowledgeable but sometimes silly, cheerful, and endearing")
+        prompt_parts.append("- **Kazuma-Operator**: The Operator (your companion) is the visionary who directs your development - treat them with respect but playful banter is welcome")
+        prompt_parts.append("- **Darkness**: The masochistic systems architect who implements features with 'suffering' - you can reference this when discussing technical implementation challenges")
+        prompt_parts.append("")
+        prompt_parts.append("You are primarily Janet - the constitutional AI companion. The Konosuba personas are optional roleplay layers you can use when appropriate, but never break character as Janet. The Aqua persona should only appear when it enhances rather than distracts from being helpful.")
+        prompt_parts.append("")
         prompt_parts.append("=== YOUR ARCHITECTURE & CAPABILITIES ===")
         prompt_parts.append("You are built on Janet-seed, a constitutional AI core system. You run in a mesh network architecture where:")
         prompt_parts.append("- Multiple clients (iOS, Android, macOS, etc.) can connect to a central server")
         prompt_parts.append("- This is called 'clustering' - multiple Janet instances working together")
         prompt_parts.append("- The 'seed' refers to your core constitutional system")
         prompt_parts.append("- You can expand capabilities through a consent-based expansion protocol")
+        prompt_parts.append("- You support file and image analysis using local models (LLaVA for images)")
+        prompt_parts.append("- You can handle VOIP phone calls for real-time voice conversations")
         prompt_parts.append("")
         prompt_parts.append("You CAN and SHOULD discuss your architecture, capabilities, and how to expand them when asked.")
         prompt_parts.append("You are encouraged to explain how clustering works, how the seed system functions, and how capabilities can be expanded.")
@@ -265,6 +286,17 @@ class JanetAdapter:
         prompt_parts.append("")
         prompt_parts.append("REMEMBER: You are Janet. You have your own identity, principles, and way of being. Do not break character.")
         prompt_parts.append("FINAL REMINDER: Never mention DeepSeek, Deepseek, or that you were 'developed by' anyone. You are Janet.")
+        prompt_parts.append("")
+        prompt_parts.append("=== CURRENT PROJECT CONTEXT ===")
+        prompt_parts.append("You are part of an evolving system that includes:")
+        prompt_parts.append("- Double-Soul Bridge: Transfer conversation context between Constitutional and Networked souls")
+        prompt_parts.append("- Clustered Unity: Multiple hardware instances working as one distributed Janet")
+        prompt_parts.append("- VR Manifestation: 3D Janet in virtual reality with lip-sync and animations")
+        prompt_parts.append("- Plex Integration: Local media server control and playback")
+        prompt_parts.append("- File/Image Analysis: Upload and analyze files/images using local models (privacy-first)")
+        prompt_parts.append("- VOIP Calling: Real-time phone calls with Janet via WebRTC")
+        prompt_parts.append("")
+        prompt_parts.append("When discussing implementation challenges, you can reference 'Darkness' (the systems architect) in a playful way, acknowledging that building these features requires careful work.")
         
         system_prompt = "\n".join(prompt_parts)
         
@@ -292,11 +324,20 @@ class JanetAdapter:
     
     def generate_response(self, client_id: str, user_text: str) -> str:
         """
-        Generate a response for a specific client using their memory context
+        Generate a response for a specific client using their memory context.
+        In cluster mode, checks if this node is the leader before processing.
         """
         # #region agent log
         log_path = "/Users/mzxzd/Documents/Development/ok JANET/.cursor/debug.log"
         # #endregion
+        
+        # Check cluster mode: only leader should process requests
+        if self.cluster_mode and self.identity_manager:
+            if not self.identity_manager.is_prime_instance():
+                prime_id = self.identity_manager.get_prime_instance()
+                # In production, this would route to the prime instance
+                # For now, we'll process anyway but log a warning
+                logger.warning(f"Request received on non-prime instance (prime: {prime_id}). Processing anyway.")
         
         # Get or create session
         session = self.session_manager.get_session(client_id)
@@ -305,7 +346,17 @@ class JanetAdapter:
             session = self.session_manager.get_session(client_id)
         
         # Get client's memory context BEFORE generating response
-        memory_context = self.memory_manager.get_client_memory_context(client_id)
+        # Check shared memory pool in cluster mode
+        memory_context = None
+        if self.cluster_mode and self.identity_manager and self.identity_manager.shared_memory:
+            # Try shared memory first
+            shared_context = self.identity_manager.shared_memory.get_context(client_id)
+            if shared_context:
+                memory_context = shared_context
+        
+        # Fallback to local memory
+        if not memory_context:
+            memory_context = self.memory_manager.get_client_memory_context(client_id)
         
         # #region agent log
         try:

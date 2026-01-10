@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import UIKit
 
 /// Manages WebSocket connection to Janet mesh server
 class WebSocketManager: ObservableObject {
@@ -198,8 +199,198 @@ class WebSocketManager: ObservableObject {
                     print("Error from server: \(errorMessage)")
                 }
             }
+        case "file_upload_result":
+            DispatchQueue.main.async {
+                self.isWaitingForResponse = false
+                if let result = json["result"] as? [String: Any],
+                   let description = result["description"] as? String ?? result["summary"] as? String {
+                    let resultMsg = Message(text: "📎 File analyzed: \(description)", isFromUser: false)
+                    self.messages.append(resultMsg)
+                }
+            }
+        case "file_upload_error":
+            DispatchQueue.main.async {
+                self.isWaitingForResponse = false
+                if let errorMessage = json["message"] as? String {
+                    let errorMsg = Message(text: "❌ File upload error: \(errorMessage)", isFromUser: false)
+                    self.messages.append(errorMsg)
+                }
+            }
+        case "voip_offer":
+            // Handle VoIP call offer (WebRTC SDP)
+            if let callId = json["call_id"] as? String,
+               let sdp = json["sdp"] as? String,
+               let sdpType = json["sdp_type"] as? String {
+                // Notify VoIP manager
+                NotificationCenter.default.post(
+                    name: NSNotification.Name("VoIPOfferReceived"),
+                    object: nil,
+                    userInfo: ["call_id": callId, "sdp": sdp, "sdp_type": sdpType]
+                )
+            }
+        case "voip_connected":
+            DispatchQueue.main.async {
+                if let callId = json["call_id"] as? String {
+                    NotificationCenter.default.post(
+                        name: NSNotification.Name("VoIPCallConnected"),
+                        object: nil,
+                        userInfo: ["call_id": callId]
+                    )
+                }
+            }
+        case "voip_ended":
+            DispatchQueue.main.async {
+                if let callId = json["call_id"] as? String {
+                    NotificationCenter.default.post(
+                        name: NSNotification.Name("VoIPCallEnded"),
+                        object: nil,
+                        userInfo: ["call_id": callId]
+                    )
+                }
+            }
         default:
             break
         }
     }
+    
+    // MARK: - File Upload
+    
+    func uploadFile(fileName: String, fileData: Data, fileType: String, task: String = "analyze", remember: Bool = false) {
+        guard isConnected else {
+            print("⚠️ Cannot upload file: not connected")
+            return
+        }
+        
+        DispatchQueue.main.async {
+            self.isWaitingForResponse = true
+        }
+        
+        let base64Data = fileData.base64EncodedString()
+        let messageDict: [String: Any] = [
+            "type": "file_upload",
+            "file_name": fileName,
+            "file_type": fileType,
+            "file_data": base64Data,
+            "task": task,
+            "remember": remember
+        ]
+        
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: messageDict),
+              let messageJSON = String(data: jsonData, encoding: .utf8) else {
+            print("Error encoding file upload message")
+            DispatchQueue.main.async {
+                self.isWaitingForResponse = false
+            }
+            return
+        }
+        
+        let wsMessage = URLSessionWebSocketTask.Message.string(messageJSON)
+        webSocketTask?.send(wsMessage) { error in
+            if let error = error {
+                print("Error uploading file: \(error)")
+                DispatchQueue.main.async {
+                    self.isWaitingForResponse = false
+                }
+            }
+        }
+    }
+    
+    // MARK: - VoIP Calling
+    
+    func initiateVoIPCall() {
+        guard isConnected else {
+            print("⚠️ Cannot initiate call: not connected")
+            return
+        }
+        
+        let callId = UUID().uuidString
+        let messageDict: [String: Any] = [
+            "type": "voip_call",
+            "call_id": callId,
+            "direction": "outgoing",
+            "device_info": [
+                "platform": "iOS",
+                "device": UIDevice.current.model
+            ]
+        ]
+        
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: messageDict),
+              let messageJSON = String(data: jsonData, encoding: .utf8) else {
+            print("Error encoding VoIP call message")
+            return
+        }
+        
+        let wsMessage = URLSessionWebSocketTask.Message.string(messageJSON)
+        webSocketTask?.send(wsMessage) { error in
+            if let error = error {
+                print("Error initiating VoIP call: \(error)")
+            }
+        }
+    }
+    
+    func answerVoIPCall(callId: String, answerSDP: String, answerType: String) {
+        let messageDict: [String: Any] = [
+            "type": "voip_answer",
+            "call_id": callId,
+            "sdp": answerSDP,
+            "sdp_type": answerType
+        ]
+        
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: messageDict),
+              let messageJSON = String(data: jsonData, encoding: .utf8) else {
+            print("Error encoding VoIP answer message")
+            return
+        }
+        
+        let wsMessage = URLSessionWebSocketTask.Message.string(messageJSON)
+        webSocketTask?.send(wsMessage) { error in
+            if let error = error {
+                print("Error sending VoIP answer: \(error)")
+            }
+        }
+    }
+    
+    func sendVoIPAudio(callId: String, audioData: Data) {
+        let base64Audio = audioData.base64EncodedString()
+        let messageDict: [String: Any] = [
+            "type": "voip_audio",
+            "call_id": callId,
+            "audio": base64Audio
+        ]
+        
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: messageDict),
+              let messageJSON = String(data: jsonData, encoding: .utf8) else {
+            print("Error encoding VoIP audio message")
+            return
+        }
+        
+        let wsMessage = URLSessionWebSocketTask.Message.string(messageJSON)
+        webSocketTask?.send(wsMessage) { error in
+            if let error = error {
+                print("Error sending VoIP audio: \(error)")
+            }
+        }
+    }
+    
+    func endVoIPCall(callId: String, reason: String = "normal") {
+        let messageDict: [String: Any] = [
+            "type": "voip_end",
+            "call_id": callId,
+            "reason": reason
+        ]
+        
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: messageDict),
+              let messageJSON = String(data: jsonData, encoding: .utf8) else {
+            print("Error encoding VoIP end message")
+            return
+        }
+        
+        let wsMessage = URLSessionWebSocketTask.Message.string(messageJSON)
+        webSocketTask?.send(wsMessage) { error in
+            if let error = error {
+                print("Error ending VoIP call: \(error)")
+            }
+        }
+    }
 }
+
