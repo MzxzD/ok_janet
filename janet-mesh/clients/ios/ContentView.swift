@@ -6,6 +6,8 @@ struct ContentView: View {
     @StateObject private var audioCapture = AudioCapture()
     @State private var serverURL = "ws://localhost:8765/ws"
     @State private var showConnectionSettings = false
+    @State private var showShareSheet = false
+    @State private var pdfURL: URL?
     
     var body: some View {
         NavigationView {
@@ -23,7 +25,17 @@ struct ContentView: View {
                                 .foregroundColor(.secondary)
                         }
                     }
-                    ToolbarItem(placement: .navigationBarTrailing) {
+                    ToolbarItemGroup(placement: .navigationBarTrailing) {
+                        // Export button
+                        if !webSocketManager.messages.isEmpty {
+                            Button(action: {
+                                exportToPDF()
+                            }) {
+                                Image(systemName: "square.and.arrow.up")
+                            }
+                        }
+                        
+                        // Settings button
                         Button(action: {
                             showConnectionSettings = true
                         }) {
@@ -37,6 +49,11 @@ struct ContentView: View {
                         webSocketManager: webSocketManager,
                         isPresented: $showConnectionSettings
                     )
+                }
+                .sheet(isPresented: $showShareSheet) {
+                    if let pdfURL = pdfURL {
+                        ShareSheet(activityItems: [pdfURL])
+                    }
                 }
                 .onAppear {
                     print("📱 ContentView appeared")
@@ -85,6 +102,30 @@ struct ContentView: View {
                 }
         }
     }
+    
+    private func exportToPDF() {
+        guard !webSocketManager.messages.isEmpty else { return }
+        
+        if let url = PDFExporter.exportConversation(messages: webSocketManager.messages) {
+            pdfURL = url
+            showShareSheet = true
+        }
+    }
+}
+
+// Share sheet wrapper
+struct ShareSheet: UIViewControllerRepresentable {
+    let activityItems: [Any]
+    
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        let controller = UIActivityViewController(
+            activityItems: activityItems,
+            applicationActivities: nil
+        )
+        return controller
+    }
+    
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }
 
 struct ContentView_Previews: PreviewProvider {

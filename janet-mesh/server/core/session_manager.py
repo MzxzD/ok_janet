@@ -71,18 +71,30 @@ class SessionManager:
     
     def end_session(self, client_id: str):
         """End a client session"""
-        session = self.sessions.get(client_id)
-        if session:
-            session.active = False
-            # Save memory context
-            for message in session.memory_context:
-                if message.get("role") and message.get("content"):
-                    self.memory_manager.add_to_memory(
-                        client_id,
-                        message["role"],
-                        message["content"],
-                        message.get("metadata")
-                    )
+        try:
+            session = self.sessions.get(client_id)
+            if session:
+                session.active = False
+                # Save memory context (skip during shutdown if database is unavailable)
+                try:
+                    for message in session.memory_context:
+                        if message.get("role") and message.get("content"):
+                            self.memory_manager.add_to_memory(
+                                client_id,
+                                message["role"],
+                                message["content"],
+                                message.get("metadata")
+                            )
+                except Exception as e:
+                    # During shutdown, database operations might fail - that's okay
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.debug(f"Error saving memory during session end: {e}")
+        except Exception as e:
+            # Catch any other errors during shutdown
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.debug(f"Error ending session: {e}")
     
     def cleanup_inactive_sessions(self):
         """Remove sessions that have timed out"""

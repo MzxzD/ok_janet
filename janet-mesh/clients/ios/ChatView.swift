@@ -154,6 +154,7 @@ struct MessageBubble: View {
                         Color.blue : Color(.systemGray5)
                     )
                     .cornerRadius(18)
+                    .textSelection(.enabled)  // Enable text selection/copying
                 
                 Text(message.timestamp, style: .time)
                     .font(.caption2)

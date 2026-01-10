@@ -54,6 +54,8 @@ class JanetWebSocketServer:
         self.host = host
         self.port = port
         self.connected_clients: Set[str] = set()
+        self._shutdown_event = None
+        self._server = None
         
         # Initialize components
         self.memory_manager = MemoryManager()
@@ -84,6 +86,28 @@ class JanetWebSocketServer:
         
         # Initialize Janet adapter
         if self.llm_model:
+            # #region agent log
+            log_path = "/Users/mzxzd/Documents/Development/ok JANET/.cursor/debug.log"
+            try:
+                import json
+                import os
+                with open(log_path, 'a') as f:
+                    f.write(json.dumps({
+                        "sessionId": "debug-session",
+                        "runId": "init",
+                        "hypothesisId": "LLM_CHECK",
+                        "location": "websocket_server.py:__init__",
+                        "message": "LLM model loaded, initializing adapter",
+                        "data": {
+                            "llm_type": self.llm_model.get("type") if isinstance(self.llm_model, dict) else type(self.llm_model).__name__,
+                            "has_brain": "brain" in self.llm_model if isinstance(self.llm_model, dict) else False,
+                            "model_name": self.llm_model.get("model_name") if isinstance(self.llm_model, dict) else None,
+                            "brain_available": hasattr(self.llm_model.get("brain", None), "is_available") if isinstance(self.llm_model, dict) and "brain" in self.llm_model else False
+                        },
+                        "timestamp": int(os.path.getmtime(__file__) * 1000) if os.path.exists(__file__) else 0
+                    }) + "\n")
+            except: pass
+            # #endregion
             self.janet_adapter = JanetAdapter(
                 self.llm_model,
                 self.memory_manager,
@@ -142,7 +166,11 @@ class JanetWebSocketServer:
         finally:
             if client_id:
                 self.connected_clients.discard(client_id)
-                self.session_manager.end_session(client_id)
+                try:
+                    self.session_manager.end_session(client_id)
+                except Exception as e:
+                    # During shutdown, memory operations might fail - that's okay
+                    logger.debug(f"Error ending session during cleanup: {e}")
     
     async def _handle_message(self, websocket: WebSocketServerProtocol, 
                             client_id: str, message: str):
@@ -150,6 +178,13 @@ class JanetWebSocketServer:
         try:
             data = json.loads(message)
             msg_type = data.get("type")
+            
+            # Allow client to override client_id if provided (for reconnection scenarios)
+            if "client_id" in data:
+                provided_client_id = data.get("client_id")
+                if provided_client_id and provided_client_id in self.connected_clients:
+                    client_id = provided_client_id
+                    logger.info(f"Using provided client_id: {client_id}")
             
             if msg_type == "audio_chunk":
                 # Handle audio chunk
@@ -163,12 +198,15 @@ class JanetWebSocketServer:
                     "text": response.get("text", ""),
                     "user_text": response.get("user_text", ""),
                     "audio": response.get("audio", ""),
-                    "audio_format": response.get("audio_format", "wav")
+                    "audio_format": response.get("audio_format", "wav"),
+                    "client_id": client_id  # Echo back client_id so client can store it
                 }))
             
             elif msg_type == "text_input":
                 # Handle text input directly
                 user_text = data.get("text", "")
+                logger.info(f"Processing text input for client {client_id}: {user_text[:50]}...")
+                
                 if self.janet_adapter:
                     response_text = self.janet_adapter.generate_response(
                         client_id, user_text
@@ -186,7 +224,8 @@ class JanetWebSocketServer:
                         "text": response_text,
                         "user_text": user_text,
                         "audio": audio_base64,
-                        "audio_format": "wav" if audio_base64 else None
+                        "audio_format": "wav" if audio_base64 else None,
+                        "client_id": client_id  # Echo back client_id so client can store it
                     }))
                 else:
                     await websocket.send(json.dumps({
@@ -232,6 +271,9 @@ class JanetWebSocketServer:
         """Start the WebSocket server"""
         logger.info(f"Starting Janet WebSocket server on {self.host}:{self.port}")
         
+        # Initialize shutdown event in the event loop context
+        self._shutdown_event = asyncio.Event()
+        
         # Custom process_request (can be used for request inspection if needed)
         async def process_request(path, request_headers):
             """Process incoming HTTP requests before handshake"""
@@ -276,8 +318,24 @@ class JanetWebSocketServer:
             self.port,
             process_request=process_request
         ) as server:
+            self._server = server
             logger.info("Server started, waiting for connections...")
-            await asyncio.Future()  # Run forever
+            # Wait for shutdown event instead of running forever
+            try:
+                await self._shutdown_event.wait()
+            except asyncio.CancelledError:
+                # Task was cancelled - that's fine, we're shutting down
+                logger.info("Server shutdown requested")
+                raise
+    
+    def shutdown(self):
+        """Gracefully shutdown the server"""
+        if self._shutdown_event:
+            try:
+                self._shutdown_event.set()
+            except RuntimeError:
+                # Event loop might be closed - that's okay during shutdown
+                pass
     
     def get_status(self) -> Dict:
         """Get server status"""
